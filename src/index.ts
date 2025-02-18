@@ -6,6 +6,7 @@ import session from "express-session";
 import "./auth/auth";
 import authRouter from "./routes/authRoute";
 import cors from "cors";
+import { isAuthenticated } from "./middleware/protectedMiddleware";
 
 dotenv.config();
 
@@ -40,14 +41,18 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 app.post("/auth", passport.authenticate("local"), (request, response) => {
-  response.json({ message: "Logged in successfully" });
+  const { email , _id } = request.user as {email:string , _id:string}
+  response.json({ message: "Logged in successfully" , user:{email , _id} , redirect:'/home'});
 });
 
 app.get("/auth/status", (request, response) => {
-  console.log(request.session);
-  return request.user ? response.send(request.user) : response.sendStatus(401);
+  if(request.isAuthenticated()){
+    return response.json({ isAuthenticated: true, user: request.user})
+  } else{
+    return response.json({isAuthenticated: false})
+  }
 });
-app.use("/users", authRouter);
+app.use("/user", authRouter);
 
 app.get("/", (req, res) => {
   res.send("Hello World");
