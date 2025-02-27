@@ -1,6 +1,7 @@
 import passport from "passport";
 import { Strategy } from "passport-local";
 import { getUserByEmail } from "../database/services/UserServices";
+import { UserModel } from "../database/models/Users";
 import bcrypt from "bcryptjs";
 
 export default passport.use(
@@ -13,13 +14,13 @@ export default passport.use(
         throw new Error("User not found");
       }
 
-      const isMatch = await bcrypt.compare(password, findUser.password);
+      const isMatch = await bcrypt.compare(password, findUser[0].password);
       if (!isMatch) {
         console.log("Invalid password");
         return done(null, false, { message: "Invalid password" });
       }
 
-      done(null, findUser);
+      done(null, findUser[0]);
     } catch (error) {
       return done(error, false);
     }
@@ -38,7 +39,7 @@ passport.deserializeUser(async (email: string, done) => {
     if (!finduser) {
       return done(new Error("User not found"));
     }
-    done(null, finduser);
+    done(null, finduser[0]);
   } catch (error) {
     done(error);
   }

@@ -1,25 +1,12 @@
-import mongoose, { Schema, Document, model } from "mongoose";
+import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
-interface IUser extends Document {
-  email: string;
-  password: string;
-  role: "user" | "admin" | "seller";
-  createdAt: Date;
-  isVerified: boolean;
-  verificationToken: string;
-}
-
-const UserSchema = new Schema<IUser>(
-  {
-    email: { type: String },
-    password: { type: String },
-    role: { type: String, enum: ["user", "admin", "seller"], default: "user" },
-    isVerified: {type: Boolean, default: false},
-    verificationToken: {type: String}
-  },
-  { timestamps: true, collection:"users" }
-);
-
-const UserModel = model<IUser>("User", UserSchema);
-
-export default UserModel;
+export const UserModel = pgTable("users" , {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").unique().notNull(),
+  password: text("password").notNull(),
+  role : text("role", {enum: ["user", "admin", "seller"]}).default("user"),
+  isVerified: boolean("is_verified").default(false),
+  verificationToken: text("verification_token"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+})

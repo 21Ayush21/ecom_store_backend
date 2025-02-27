@@ -1,5 +1,5 @@
 import express from "express";
-import { connectDB } from "./database/plugins/mongo";
+import "./database/plugins/database"
 import dotenv from "dotenv";
 import passport from "passport";
 import session from "express-session";
@@ -8,8 +8,10 @@ import authRouter from "./routes/authRoute";
 import cors from "cors";
 import { isAuthenticated } from "./middleware/protectedMiddleware";
 
+
 dotenv.config();
 
+const PORT = process.env.PORT;
 const app = express();
 app.use(
   cors({
@@ -58,8 +60,6 @@ app.get("/", (req, res) => {
   res.send("Hello World");
 });
 
-connectDB().then(() => {
-  app.listen(process.env.PORT, () => {
-    console.log("Server started at http://localhost:3000");
-  });
-});
+app.listen(PORT, () => {
+  console.log(`Server started at http://localhost:${PORT}`);
+})

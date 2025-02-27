@@ -1,11 +1,13 @@
 import express from "express";
-import UserModel from "../database/models/Users";
+import {UserModel} from "../database/models/Users";
 import type { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer"
-import bycrypt from "bcryptjs"
+import bcrypt from "bcryptjs"
 import dotenv from "dotenv"
-import { getUserByEmail } from "../database/services/UserServices";
+import { createUser, getUserByEmail } from "../database/services/UserServices";
+import { db } from "../database/plugins/database";
+import { eq } from "drizzle-orm";
 
 dotenv.config()
 
@@ -13,21 +15,17 @@ const authRouter = express.Router();
 
 authRouter.post("/signup", async (req: Request, res: Response) => {
   try {
+
+    console.log("signup req",req.body);
     const { email , password } = req.body;
 
-    const hashedPassword = await bycrypt.hash(password , 10) 
+    const hashedPassword = await bcrypt.hash(password , 10) 
 
     const verificationToken = jwt.sign({ email }, process.env.JWT_SECRET! , {expiresIn: "1h"});
 
-    const newUser = new UserModel({
-      email,
-      password:hashedPassword,
-      verificationToken
-    })
+    const newUser = await createUser(email , hashedPassword , verificationToken);
 
     const verificationUrl = `${process.env.FRONTEND_URL}/verify?token=${verificationToken}`
-
-    await newUser.save();
 
     const transporter = nodemailer.createTransport({
       host:'smtp.resend.com',
@@ -52,6 +50,7 @@ authRouter.post("/signup", async (req: Request, res: Response) => {
       .status(500)
       .json({ message: "Server error", error: (error as Error).message });
     return;
+    
   }
 });
 
@@ -75,8 +74,7 @@ authRouter.get("/verify",async(req , res)=>{
       return res.status(400).json({message: "User not found"})
     }
 
-    user.isVerified = true
-    await user.save()
+    await db.update(UserModel).set({isVerified:true , verificationToken: null}).where(eq(UserModel.email, email))
 
     return res.json({ message: "Email verified successfully. You can now log in." });
 

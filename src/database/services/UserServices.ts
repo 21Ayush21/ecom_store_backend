@@ -1,12 +1,28 @@
-import UserModel from "../models/Users";
+import { db } from "../plugins/database";
+import { UserModel } from "../models/Users";
+import { eq } from "drizzle-orm";
 
-export const getUserByEmail = async (email: string ) => {
+export const createUser = async (email: string, password: string, verificationToken: string) => {
   try {
-    const user = await UserModel.findOne({ email  }).exec();
-    return user || null;
+    console.log("Inserting user:", { email, password, verificationToken });
+
+    const newUser = await db.insert(UserModel).values({
+      email,
+      password,
+      verificationToken
+    }).returning();
+
+    console.log("User successfully inserted:", newUser);
+
+    return newUser[0]; 
   } catch (error) {
-    throw new Error(
-      `Error fetching user by email: ${(error as Error).message}`
-    );
+    console.error("Error creating user:", error);
+    throw error; 
   }
 };
+
+
+export const getUserByEmail = async (email: string)=>{
+  const result = await db.select().from(UserModel).where(eq(UserModel.email, email)).limit(1);
+  return result ?? null
+}

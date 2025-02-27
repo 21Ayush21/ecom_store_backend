@@ -8,17 +8,20 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - .env
+      - .env.docker
     depends_on:
-      - mongo
+      - postgres
 
-  mongo:
-    image: mongo:8.0
-    container_name: mongodb
+  postgres:
+    image: postgres:16.1
+    container_name: postgresdb
+    restart: always
     ports:
-      - "27017:27017"
+      - "5432:5432"
+    env_file:
+      - .env.docker
     volumes:
-      - mongo-data:/data/db
+      - postgres-data:/var/lib/postgresql/data
 
 volumes:
-  mongo-data:
+  postgres-data:
