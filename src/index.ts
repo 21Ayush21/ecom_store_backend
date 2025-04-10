@@ -1,4 +1,4 @@
-import express from "express";
+import express, { response } from "express";
 import "./database/plugins/database"
 import dotenv from "dotenv";
 import passport from "passport";
@@ -7,11 +7,13 @@ import "./auth/auth";
 import authRouter from "./routes/authRoute";
 import cors from "cors";
 import { isAuthenticated } from "./middleware/protectedMiddleware";
-import { getUserByEmail } from "./database/services/UserServices";
-import { generateAccessToken, generateRefreshToken } from "./utils/Tokens";
+import { getUserByEmail, getUserById } from "./database/services/UserServices";
+import { generateAccessToken, generateRefreshToken, verifyToken } from "./utils/Tokens";
 import { db } from "./database/plugins/database";
 import { UserModel } from "./database/models/Users";
 import { eq } from "drizzle-orm";
+import bcrypt from "bcrypt";
+import cookieParser from "cookie-parser";
 
 
 dotenv.config();
@@ -29,67 +31,87 @@ app.use(
 
 app.options("*", cors())
 app.use(express.json());
-
+app.use(cookieParser())
 
 app.use(passport.initialize());
 
-app.post("/api/auth", passport.authenticate("local", {session: false}), async(request, response) => {
+app.post("/api/auth", async (request , response) => {
   try{
-    const {email , id} = request.user as {email:string , id: string}
+    const {email , password} = request.body;
 
-    const userFromDB = await getUserByEmail(email);
-
-    if(!userFromDB){
+    const users = await getUserByEmail(email);
+    if(!users || users.length === 0){
       return response.status(404).json({
-        message:"User not found"
+        message: "User not found"
       })
     }
 
-    const user = userFromDB[0];
+    const user = users[0];
+    const isMatch = await bcrypt.compare(password , user.password);
+    if (!isMatch){
+      return response.status(401).json({
+        message: "Invalid Credentials"
+      })
+    }
+    
+    const userForToken = {
+      id: user.id,
+      email: user.email,
+      role: user.role as "user" | "seller" | "admin"
+    }
 
-    const accessToken = generateAccessToken({id: user.id, email:user.email , role: user.role as "user" | "seller" | "admin"})
+    const accessToken = generateAccessToken(userForToken);
+    const refreshToken = generateRefreshToken(userForToken);
 
-    const refreshToken = generateRefreshToken({id: user.id, email:user.email , role: user.role as "user" | "seller" | "admin"})
+    const expriresAt = new Date()
+    expriresAt.setDate(expriresAt.getDate() + 7);
 
-    const expiresAt = new Date()
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    await db.update(UserModel)
+      .set({refreshToken: refreshToken, refreshTokenExpiresAt: expriresAt})
+      .where(eq(UserModel.id , user.id))
+      
+    response.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 15 * 60 * 1000, 
+    })
 
-    await db.update(UserModel).set({refreshToken: refreshToken, refreshTokenExpiresAt:expiresAt}).where(eq(UserModel.id , user.id))
+    response.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, 
+    })
 
     response.json({
-      message: "Login Successfully",
+      message: "Login Successfull",
       user: {
         email: user.email,
         id: user.id,
         role: user.role
-      },
-      accessToken,
-      refreshToken,
-      redirect:'/home'
+      }
     })
   } catch(error){
-    response.status(500).json({message: "Login Failed" , error: (error as Error).message})
+    response.status(500).json({ message: "Login Failed" , error: (error as Error).message})
   }
+})
 
-});
-
-app.get("/api/auth/status",isAuthenticated, (request, response) => {
-  
-  const user = request.user as any
-
-  if (!user){
-    return response.json({ isAuthenticated: false})
-  }
+app.get("/api/auth/status", passport.authenticate("jwt", { session: false }), (request, response) => {
+  const user = request.user as any;
 
   response.json({
-    isAuthenticated:true,
+    isAuthenticated: true,
     user: {
       email: user.email,
       id: user.id,
-      role: user.role
-    }
-  })
+      role: user.role,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+    },
+  });
 });
+
 app.use("/api/auth", authRouter);
 
 app.get("/", (req, res) => {

@@ -1,35 +1,35 @@
-import bcrypt from "bcryptjs";
+import dotenv from "dotenv";
 import passport from "passport";
-import { Strategy } from "passport-local";
-import { getUserByEmail } from "../database/services/UserServices";
+import { ExtractJwt, Strategy as JwtStrategy } from "passport-jwt";
+import { getUserById } from "../database/services/UserServices";
 
-export default passport.use(
-  new Strategy({ usernameField: "email" }, async (email, password, done) => {
-    console.log(`user ${email}`);
-    try {
-      const findUser = await getUserByEmail(email);
-      console.log("Authenticated user:", findUser);
-      if (!findUser) {
-        throw new Error("User not found");
-      }
-      
-      const user = findUser[0]
+dotenv.config();
 
-      const isMatch = await bcrypt.compare(password, findUser[0].password);
-      if (!isMatch) {
-        console.log("Invalid credentials");
-        return done(null, false, { message: "Invalid credentials" });
+const opts ={
+  jwtFromRequest: ExtractJwt.fromExtractors([(req) => req.cookies['accessToken']]),
+  secretOrKey: process.env.JWT_SECRET!
+}
+
+passport.use(
+  new JwtStrategy(opts , async (jwt_payload , done) => {
+    try{
+      const user = await getUserById(jwt_payload.id);
+
+      if(!user || user.length === 0){
+        return done(null , false, {message: "User not found"})
       }
 
-      const userForToken = {
-        id: user.id,
-        email: user.email,
-        role: user.role || 'user' 
-      };
-      done(null, userForToken);
-    } catch (error) {
-      return done(error, false);
+      const userForRequest = {
+        id: user[0].id,
+        email: user[0].email,
+        role: user[0].role || "user"
+      }
+
+      done(null , userForRequest)
+    }catch(error){
+      done(error , false)
     }
   })
-);
+)
 
+export default passport;

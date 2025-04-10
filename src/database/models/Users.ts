@@ -13,4 +13,4 @@ export const UserModel = pgTable("users" , {
   createdAt: timestamp("created_at").defaultNow().notNull()
 })
 
-// export type User_new = InferSelectModel<typeof UserModel>
+export type User_new = InferSelectModel<typeof UserModel>
