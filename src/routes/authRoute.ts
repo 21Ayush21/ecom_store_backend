@@ -5,10 +5,11 @@ import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer"
 import bcrypt from "bcryptjs"
 import dotenv from "dotenv"
-import { createUser, getUserByEmail } from "../database/services/UserServices";
+import { createUser, getUserByEmail, getUserById } from "../database/services/UserServices";
 import { db } from "../database/plugins/database";
 import { eq } from "drizzle-orm";
-
+import { generateAccessToken, generateRefreshToken, verifyToken } from "../utils/Tokens";
+import { isAuthenticated } from "../middleware/protectedMiddleware";
 dotenv.config()
 
 const authRouter = express.Router();
@@ -21,11 +22,12 @@ authRouter.post("/signup", async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(password , 10) 
 
-    const verificationToken = jwt.sign({ email }, process.env.JWT_SECRET! , {expiresIn: "1h"});
+    // Create a temporary token for email verification (only needs email)
+    const verificationToken = jwt.sign({ email }, process.env.JWT_SECRET!, { expiresIn: '24h' });
 
     const newUser = await createUser(email , hashedPassword , verificationToken);
 
-    const verificationUrl = `${process.env.FRONTEND_URL}/verify?token=${verificationToken}`
+    const verificationUrl = `${process.env.FRONTEND_URL}/user/verify?token=${verificationToken}`
 
     const transporter = nodemailer.createTransport({
       host:'smtp.resend.com',
@@ -63,7 +65,7 @@ authRouter.get("/verify",async(req , res)=>{
       return res.status(400).json({ message: "Invalid token" });
     }
 
-    const decodeToken = jwt.verify(token, process.env.JWT_SECRET!);
+    const decodeToken = verifyToken(token);
 
     const { email } = decodeToken as {email: string} 
 
@@ -94,5 +96,73 @@ authRouter.post('/logout' , async(req, res) =>{
     })
   })
 })
+
+// Refresh token endpoint
+authRouter.post('/refresh-token', async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token is required' });
+    }
+
+    // Verify the refresh token
+    const payload = verifyToken(refreshToken);
+    
+    if (!payload || !payload.id) {
+      return res.status(401).json({ message: 'Invalid refresh token' });
+    }
+
+    // Get user from database to validate the refresh token
+    const user = await getUserById(payload.id);
+
+    if (!user || user.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if the refresh token matches and hasn't expired
+    if (user[0].refreshToken !== refreshToken || 
+        !user[0].refreshTokenExpiresAt || 
+        new Date() > new Date(user[0].refreshTokenExpiresAt)) {
+      return res.status(401).json({ message: 'Invalid or expired refresh token' });
+    }
+
+    // Generate new tokens
+    const newAccessToken = generateAccessToken({ 
+      id: user[0].id, 
+      email: user[0].email, 
+      role: user[0].role as "user" | "seller" | "admin" 
+    });
+
+    const newRefreshToken = generateRefreshToken({
+      id: user[0].id, 
+      email: user[0].email, 
+      role: user[0].role as "user" | "seller" | "admin"
+    });
+
+    // Update refresh token in database
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await db.update(UserModel)
+      .set({
+        refreshToken: newRefreshToken,
+        refreshTokenExpiresAt: expiresAt
+      })
+      .where(eq(UserModel.id, user[0].id));
+
+    // Return new tokens
+    res.status(200).json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Failed to refresh token', 
+      error: (error as Error).message 
+    });
+  }
+});
+
 
 export default authRouter;

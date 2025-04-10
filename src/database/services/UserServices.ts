@@ -26,3 +26,8 @@ export const getUserByEmail = async (email: string)=>{
   const result = await db.select().from(UserModel).where(eq(UserModel.email, email)).limit(1);
   return result ?? null
 }
+
+export const getUserById = async (id: string) => {
+  const result = await db.select().from(UserModel).where(eq(UserModel.id, id)).limit(1);
+  return result ?? null
+}

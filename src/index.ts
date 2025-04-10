@@ -7,6 +7,11 @@ import "./auth/auth";
 import authRouter from "./routes/authRoute";
 import cors from "cors";
 import { isAuthenticated } from "./middleware/protectedMiddleware";
+import { getUserByEmail } from "./database/services/UserServices";
+import { generateAccessToken, generateRefreshToken } from "./utils/Tokens";
+import { db } from "./database/plugins/database";
+import { UserModel } from "./database/models/Users";
+import { eq } from "drizzle-orm";
 
 
 dotenv.config();
@@ -25,36 +30,67 @@ app.use(
 app.options("*", cors())
 app.use(express.json());
 
-app.use(
-  session({
-    secret: "your_secret",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      maxAge: 60000 * 60,
-      secure: false,
-      sameSite:"lax",
-      httpOnly: true
-    },
-  })
-);
 
 app.use(passport.initialize());
-app.use(passport.session());
 
-app.post("/auth", passport.authenticate("local"), (request, response) => {
-  const { email , _id } = request.user as {email:string , _id:string}
-  response.json({ message: "Logged in successfully" , user:{email , _id} , redirect:'/home'});
-});
+app.post("/api/auth", passport.authenticate("local", {session: false}), async(request, response) => {
+  try{
+    const {email , id} = request.user as {email:string , id: string}
 
-app.get("/auth/status", (request, response) => {
-  if(request.isAuthenticated()){
-    return response.json({ isAuthenticated: true, user: request.user})
-  } else{
-    return response.json({isAuthenticated: false})
+    const userFromDB = await getUserByEmail(email);
+
+    if(!userFromDB){
+      return response.status(404).json({
+        message:"User not found"
+      })
+    }
+
+    const user = userFromDB[0];
+
+    const accessToken = generateAccessToken({id: user.id, email:user.email , role: user.role as "user" | "seller" | "admin"})
+
+    const refreshToken = generateRefreshToken({id: user.id, email:user.email , role: user.role as "user" | "seller" | "admin"})
+
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await db.update(UserModel).set({refreshToken: refreshToken, refreshTokenExpiresAt:expiresAt}).where(eq(UserModel.id , user.id))
+
+    response.json({
+      message: "Login Successfully",
+      user: {
+        email: user.email,
+        id: user.id,
+        role: user.role
+      },
+      accessToken,
+      refreshToken,
+      redirect:'/home'
+    })
+  } catch(error){
+    response.status(500).json({message: "Login Failed" , error: (error as Error).message})
   }
+
 });
-app.use("/user", authRouter);
+
+app.get("/api/auth/status",isAuthenticated, (request, response) => {
+  
+  const user = request.user as any
+
+  if (!user){
+    return response.json({ isAuthenticated: false})
+  }
+
+  response.json({
+    isAuthenticated:true,
+    user: {
+      email: user.email,
+      id: user.id,
+      role: user.role
+    }
+  })
+});
+app.use("/api/auth", authRouter);
 
 app.get("/", (req, res) => {
   res.send("Hello World");
