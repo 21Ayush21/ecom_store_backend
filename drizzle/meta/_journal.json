@@ -15,6 +15,13 @@
       "when": 1744291918934,
       "tag": "0001_ambitious_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1745069460553,
+      "tag": "0002_fuzzy_norman_osborn",
+      "breakpoints": true
     }
   ]
 }
