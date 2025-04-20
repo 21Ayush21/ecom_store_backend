@@ -1,17 +1,16 @@
-import express from "express";
-import { Request, Response } from "express";
-import multer from "multer";
-import dotenv from "dotenv";
 import {
-  S3Client,
-  PutObjectCommand,
   GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
 } from "@aws-sdk/client-s3";
-import { randomImageName } from "../utils/RandomImageName";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { db } from "../database/plugins/database";
-import { ProductModel } from "../database/models/Products";
+import dotenv from "dotenv";
 import { eq } from "drizzle-orm";
+import express, { Request, Response } from "express";
+import multer from "multer";
+import { ProductModel } from "../database/models/Products";
+import { db } from "../database/plugins/database";
+import { randomImageName } from "../utils/RandomImageName";
 
 dotenv.config();
 
@@ -40,7 +39,7 @@ productRouter.post(
     console.log("req.body", req.body);
     console.log("req.file", req.file);
 
-    const imageName = randomImageName()! || "default";
+    const imageName = randomImageName();
 
     const params = {
       Bucket: bucketName,
@@ -48,6 +47,8 @@ productRouter.post(
       Body: req.file?.buffer,
       ContentType: req.file?.mimetype,
     };
+
+    console.log("image name:", imageName);
 
     const command = new PutObjectCommand(params);
 
@@ -96,10 +97,31 @@ productRouter.get("/get-product", async (req: Request, res: Response) => {
       product.imageUrl = url;
     }
 
-    res.status(200).json(getProduct);
+    res.send(getProduct);
   } catch (error) {
     res.status(500).json({
       message: "Error occured while fetching product from the database",
+    });
+  }
+});
+
+productRouter.get('/products', async (req: Request, res: Response) => {
+  try {
+    const userId = req.query.userId as string;
+
+    const products = await db.query.ProductModel.findMany({
+      where: eq(ProductModel.userId, userId),
+      with: { user: true },
+    });
+
+    if (products.length === 0) {
+      return res.status(404).json({ message: 'No products found for this user' });
+    }
+
+    res.send(products);
+  } catch (error) {
+    res.status(500).json({
+      message: 'Error occurred while fetching products from the database',
     });
   }
 });
